@@ -24,8 +24,6 @@ def inject_dirty_data(data):
     dirty_type = random.choice([
         "missing_field",
         "wrong_type",
-        "out_of_range",
-        "bad_timestamp",
         "null_value",
         "extra_field"
     ])
@@ -35,12 +33,6 @@ def inject_dirty_data(data):
 
     elif dirty_type == "wrong_type":
         data["value"] = "ERROR_VALUE"
-
-    elif dirty_type == "out_of_range":
-        data["value"] = random.uniform(-100, 200)
-
-    elif dirty_type == "bad_timestamp":
-        data["timestamp"] = "NOT_A_TIMESTAMP"
 
     elif dirty_type == "null_value":
         data["value"] = None
@@ -58,8 +50,8 @@ try:
 
             data = generate_clean_data(s_id)
 
-            # 20% chance of dirty data
-            if random.random() < 0.2:
+            # 10% chance of dirty data
+            if random.random() < 0.1:
                 data = inject_dirty_data(data)
             else:
                 data["data_quality_flag"] = "clean"
