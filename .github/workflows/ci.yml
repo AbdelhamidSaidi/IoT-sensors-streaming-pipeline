@@ -46,6 +46,26 @@ jobs:
             echo 'flake8 not available; skipping lint'
           fi
 
+      - name: Run transformation unit tests
+        env:
+          PYTHONPATH: .
+        run: |
+          if [ -f test/test_transformations.py ]; then
+            pytest -q test/test_transformations.py
+          else
+            echo 'test/test_transformations.py not found; skipping'
+          fi
+
+      - name: Run dashboard metrics unit tests
+        env:
+          PYTHONPATH: .
+        run: |
+          if [ -f test/test_streamlit_app.py ]; then
+            pytest -q test/test_streamlit_app.py
+          else
+            echo 'test/test_streamlit_app.py not found; skipping'
+          fi
+
       - name: Run tests
         env:
           PYTHONPATH: .

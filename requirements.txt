@@ -6,3 +6,4 @@ plotly
 streamlit-autorefresh
 pytest
 flake8
+pytest
