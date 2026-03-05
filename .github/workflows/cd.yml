@@ -59,19 +59,6 @@ jobs:
           OCI_PORT="${{ secrets.OCI_PORT }}"
           ssh-keyscan -p "${OCI_PORT:-22}" "${{ secrets.OCI_HOST }}" >> ~/.ssh/known_hosts 2>&1 || echo "Warning: ssh-keyscan failed, proceeding anyway"
 
-      - name: Test SSH connection
-        shell: bash
-        run: |
-          OCI_PORT="${{ secrets.OCI_PORT }}"
-          echo "Testing SSH connection to ${{ secrets.OCI_HOST }}..."
-          ssh -v -i ~/.ssh/oci_key \
-            -o StrictHostKeyChecking=no \
-            -o UserKnownHostsFile=/dev/null \
-            -o ConnectTimeout=10 \
-            -p "${OCI_PORT:-22}" \
-            "${{ secrets.OCI_USER }}@${{ secrets.OCI_HOST }}" \
-            "echo 'SSH connection successful'; uname -a"
-
       - name: Sync repository to Oracle VM
         shell: bash
         run: |
