@@ -1,4 +1,4 @@
-"""Medallion package init for the Kafka mini project.
+"""Medallion package init for the IoT Sensors Streaming Pipeline.
 
 This file turns `medallion` into a regular Python package so imports
 like `from medallion.silver.silver import get_connection` work reliably

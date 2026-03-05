@@ -1,4 +1,4 @@
-# Kafka Mini Project — Medallion pipeline (local dev)
+# IoT Sensors Streaming Pipeline — Medallion architecture (local dev)
 
 This repository contains a minimal end-to-end medallion-style pipeline for IoT sensor data: a Python producer → Kafka broker → consumer (bronze) → silver transforms → gold transforms → dim tables. The repo includes orchestration (Airflow DAG), a Streamlit dashboard for KPIs, and helper scripts for local development.
 
@@ -132,7 +132,7 @@ The CD workflow (`.github/workflows/cd.yml`) automatically deploys to Oracle Clo
   - `OCI_USER`: SSH username for the VM
   - `OCI_SSH_PRIVATE_KEY`: Private SSH key for authentication
   - `OCI_PORT`: SSH port
-  - `OCI_APP_PATH`: Application directory path on VM (default: `/home/$OCI_USER/kafka-mini-project`)
+  - `OCI_APP_PATH`: Application directory path on VM (default: `/home/$OCI_USER/IoT-sensors-streaming-pipeline`)
   - `OCI_ENV_FILE`: Optional `.env` file content to be written on the VM
 
 **Note**: The deployment uses concurrency control to prevent multiple simultaneous deployments.
