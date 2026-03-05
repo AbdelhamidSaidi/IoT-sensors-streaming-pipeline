@@ -15,62 +15,60 @@ jobs:
     runs-on: ubuntu-latest
     environment: .env
 
-    env:
-      OCI_HOST: ${{ secrets.OCI_HOST }}
-      OCI_COMPARTMENT_ID: ${{ secrets.OCI_COMPARTMENT_ID }}
-      OCI_CONFIG_FILE: ${{ secrets.OCI_CONFIG_FILE }}
-      OCI_KEY_FILE: ${{ secrets.OCI_KEY_FILE }}
-      OCI_CONFIG_PROFILE: ${{ secrets.OCI_CONFIG_PROFILE }}
-      OCI_PORT: ${{ secrets.OCI_PORT || '22' }}
-      OCI_APP_PATH: ${{ secrets.OCI_APP_PATH || format('/home/{0}/kafka-mini-project', secrets.OCI_USER) }}
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Create .env file from secrets
+      - name: Create .env file from secret
         shell: bash
         run: |
-            if [ -n "${{ secrets.OCI_ENV_FILE }}" ]; then
+          if [ -n "${{ secrets.OCI_ENV_FILE }}" ]; then
             printf "%s" "${{ secrets.OCI_ENV_FILE }}" > .env
-            else
-            echo "Warning: OCI_ENV_FILE secret not set, proceeding without .env"
-            fi
+          else
+            echo "Error: OCI_ENV_FILE secret not set" && exit 1
+          fi
 
-
-      - name: Validate required secrets
+      - name: Validate and source .env
         shell: bash
         run: |
-          test -n "${{ secrets.OCI_HOST }}" || (echo "Missing secret: OCI_HOST" && exit 1)
-          test -n "${{ secrets.OCI_USER }}" || (echo "Missing secret: OCI_USER" && exit 1)
-          test -n "${{ secrets.OCI_SSH_PRIVATE_KEY }}" || (echo "Missing secret: OCI_SSH_PRIVATE_KEY" && exit 1)
+          source .env
+          test -n "$OCI_HOST" || (echo "Missing in .env: OCI_HOST" && exit 1)
+          test -n "$OCI_USER" || (echo "Missing in .env: OCI_USER" && exit 1)
+          test -n "$OCI_SSH_PRIVATE_KEY" || (echo "Missing in .env: OCI_SSH_PRIVATE_KEY" && exit 1)
+          echo "All required variables found in .env"
 
       - name: Setup SSH key
         shell: bash
         run: |
-          mkdir -p $HOME/.ssh
-          printf "%s" "${{ secrets.OCI_SSH_PRIVATE_KEY }}" > ~/.ssh/oci_key
+          source .env
+          mkdir -p ~/.ssh
+          printf "%s" "$OCI_SSH_PRIVATE_KEY" > ~/.ssh/oci_key
           chmod 600 ~/.ssh/oci_key
-          ssh-keyscan -p "$OCI_PORT" "${{ secrets.OCI_HOST }}" >> ~/.ssh/known_hosts
+          OCI_PORT=${OCI_PORT:-22}
+          ssh-keyscan -p "$OCI_PORT" "$OCI_HOST" >> ~/.ssh/known_hosts
 
       - name: Sync repository to Oracle VM
         shell: bash
         run: |
+          source .env
+          OCI_PORT=${OCI_PORT:-22}
+          OCI_APP_PATH=${OCI_APP_PATH:-/home/$OCI_USER/kafka-mini-project}
           rsync -az --delete \
             -e "ssh -i ~/.ssh/oci_key -p $OCI_PORT" \
             --exclude ".git" \
             --exclude "__pycache__" \
             --exclude ".pytest_cache" \
-            ./ "${{ secrets.OCI_USER }}@${{ secrets.OCI_HOST }}:$OCI_APP_PATH/"
+            ./ "$OCI_USER@$OCI_HOST:$OCI_APP_PATH/"
 
       - name: Deploy with docker compose
         shell: bash
         run: |
-          ssh -i ~/.ssh/oci_key -p "$OCI_PORT" "${{ secrets.OCI_USER }}@${{ secrets.OCI_HOST }}" << 'EOF'
+          source .env
+          OCI_PORT=${OCI_PORT:-22}
+          OCI_APP_PATH=${OCI_APP_PATH:-/home/$OCI_USER/kafka-mini-project}
+          ssh -i ~/.ssh/oci_key -p "$OCI_PORT" "$OCI_USER@$OCI_HOST" << 'EOF'
             set -e
-            APP_PATH="${{ env.OCI_APP_PATH }}"
-            cd "$APP_PATH"
-
+            cd "$OCI_APP_PATH"
             docker compose down
             docker compose up -d --build
           EOF
