@@ -19,14 +19,20 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Create .env file from secret
-        shell: bash
+      - name: Create .env file from GitHub secrets
         run: |
-          if [ -n "${{ secrets.OCI_ENV_FILE }}" ]; then
-            printf "%s" "${{ secrets.OCI_ENV_FILE }}" > .env
-          else
-            echo "Error: OCI_ENV_FILE secret not set" && exit 1
-          fi
+            echo "MSSQL_SA_PASSWORD=${{ secrets.MSSQL_SA_PASSWORD }}" > .env
+            echo "OCI_COMPARTMENT_ID=${{ secrets.OCI_COMPARTMENT_ID }}" >> .env
+            echo "OCI_CONFIG_PROFILE=${{ secrets.OCI_CONFIG_PROFILE }}" >> .env
+            echo "OCI_FINGERPRINT=${{ secrets.OCI_FINGERPRINT }}" >> .env
+            echo "OCI_HOST=${{ secrets.OCI_HOST }}" >> .env
+            echo "OCI_REGION=${{ secrets.OCI_REGION }}" >> .env
+            echo "OCI_SSH_PRIVATE_KEY=${{ secrets.OCI_SSH_PRIVATE_KEY }}" >> .env
+            echo "OCI_TENANCY=${{ secrets.OCI_TENANCY }}" >> .env
+            echo "OCI_USER=${{ secrets.OCI_USER }}" >> .env
+            echo "OCI_CONFIG_FILE=${{ secrets.OCI_CONFIG_FILE }}" >> .env
+            echo "OCI_KEY_FILE=${{ secrets.OCI_KEY_FILE }}" >> .env
+        shell: bash
 
       - name: Validate and source .env
         shell: bash
