@@ -35,6 +35,7 @@ services:
     volumes:
       - ./dags:/opt/airflow/dags
       - ./airflow_db:/opt/airflow
+      - ./:/opt/airflow/workspace:cached
     command: >
       bash -c "
         airflow db upgrade &&

@@ -1,83 +1,117 @@
-# Kafka Mini Project
+# Kafka Mini Project — Medallion pipeline (local dev)
 
-This project demonstrates a minimal local Kafka setup (broker-only using KRaft) with a Python producer and consumer. The consumer persists incoming sensor messages into a SQL Server database (ODBC).
+This repository contains a minimal end-to-end medallion-style pipeline for IoT sensor data: a Python producer → Kafka broker → consumer (bronze) → silver transforms → gold transforms → dim tables. The repo includes orchestration (Airflow DAG), a Streamlit dashboard for KPIs, and helper scripts for local development.
 
-## Repository layout
+Key points:
+- Kafka is used as the message bus (single-node broker in KRaft mode for local use).
+- SQL Server (T-SQL) is used as the persistence layer (accessed via ODBC / `pyodbc`).
+- The medallion layers are implemented under the `medallion/` package (`silver/`, `gold/`).
+- A Streamlit dashboard in `app/streamlit_app.py` visualizes KPIs, per-sensor series, watermarks and latency.
 
-- `app/data_generation/producer.py`: publishes synthetic sensor messages to the `sensor-data` topic.
-- `app/consumer/consumer.py`: consumes messages from `sensor-data` and stores them in a SQL Server table named `sensor_logs`.
-- `docker-compose.yaml`: runs an Apache Kafka broker (and optional services like Postgres/pgAdmin if present).
+Repository layout (important files)
 
-## What happens when you run things
+- `producer.py` — synthetic producer that publishes sensor messages to Kafka (`sensor-data` topic).
+- `consumer.py` — Kafka consumer that writes raw messages to `sensor_logs` (bronze).
+- `medallion/` — ETL package with:
+  - `medallion/silver/silver.py` — silver-layer logic and DB connection helpers
+  - `medallion/gold/transform_gold.py` — gold transforms (builds `gold_central` and per-metric tables)
+  - `medallion/gold/dim.py` — dim pipeline (append-style `dim_<metric>` tables seeded from `gold_central`)
+  - `medallion/gold/gold.py` — runner/orchestrator for gold+dim loops
+- `app/streamlit_app.py` — dashboard with auto-refresh, per-sensor charts, last-minute/last-second variation, and KPIs
+- `dags/orchestrate_pipeline.py` — Airflow DAG to orchestrate: producer → consumer → silver → gold (with data tests between stages)
+- `docker-compose.yaml` — brings up local services (Kafka broker, Airflow service, etc.)
+- `docker/airflow/Dockerfile` — custom Airflow image (adds ODBC driver / Python provider packages)
+- `docker/kafka/Dockerfile` — Kafka image wrapper (if present)
+- `scripts/` — helper scripts:
+  - `generate_mssql_env.py` — builds `.env` with `MSSQL_ALCHEMY_CONN` from `medallion/silver/silver.py` config
+  - `data_tests.py` — run boundary/data-quality tests between layers
+  - `diagnose_dim.py` — diagnostic utility for `dim` tables
+- `requirements.txt` — Python dependencies (Streamlit, pandas, pyodbc, kafka-python, plotly, streamlit-autorefresh)
 
-1. Start Kafka
-   - The `docker-compose.yaml` service `kafka` runs a single Kafka broker listening on `localhost:9092`.
+Prerequisites
 
-2. Create the `sensor-data` topic (optional)
-   - Kafka will auto-create topics by default, but you can explicitly create the topic inside the container:
+- Python 3.9+ (use a virtual environment for local runs)
+- Docker & Docker Compose (for the Kafka + Airflow environment)
+- Access to a SQL Server instance reachable from your runtime (or configure a Dockerized SQL Server with appropriate licensing)
+- On Windows, install Microsoft ODBC Driver for SQL Server (e.g. ODBC Driver 18). Containers use `msodbcsql` installed in the Airflow image.
 
-```powershell
-# start the broker
-docker compose up -d
-# create topic (inside the running Kafka container)
-docker exec -it kafka /opt/kafka/bin/kafka-topics.sh \
-  --create --topic sensor-data \
-  --bootstrap-server localhost:9092 \
-  --partitions 1 \
-  --replication-factor 1
-```
+Quick local development (without Docker)
 
-3. Start the producer
-
-```powershell
-# inside a Python venv with dependencies installed
-.venv\Scripts\python app\data_generation\producer.py
-```
-
-The producer sends a small batch of three synthetic sensor readings every second to the `sensor-data` topic.
-
-4. Start the consumer
-
-```powershell
-.venv\Scripts\python app\consumer\consumer.py
-```
-
-- On startup the consumer connects to SQL Server using an ODBC connection string. It will read the connection string from the `MSSQL_CONN` environment variable if present; otherwise it prompts you to paste a connection string interactively.
-- For each consumed message the consumer inserts a row into `sensor_logs` with columns: `sensor_id, val, unit, ts`.
-- The consumer prints a `Stored: <sensor_id> at <timestamp>` line for each message persisted.
-
-## Important implementation details and troubleshooting notes
-
-- Python package: Use `kafka-python` and `pyodbc` for SQL Server connectivity. Install into your venv:
+1. Create and activate a venv, install deps:
 
 ```powershell
-.venv\Scripts\python -m pip install kafka-python pyodbc
+python -m venv .venv
+.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
 ```
 
-- SQL Server ODBC driver: On Windows install the appropriate Microsoft ODBC Driver for SQL Server (e.g., "ODBC Driver 18 for SQL Server"). The consumer requires an ODBC driver available to `pyodbc`.
-
-- Consumer robustness improvements
-  - The `consumer.py` includes logic to recreate the `KafkaConsumer` and retry when transient errors occur.
-  - `KeyboardInterrupt` is handled to close the consumer and database cleanly.
-
-## Supplying the SQL Server connection string
-
-- You can set the environment variable `MSSQL_CONN` before running the consumer, for example (PowerShell):
+2. Start the producer and consumer in separate terminals (consumer needs a valid SQL Server connection string):
 
 ```powershell
-$env:MSSQL_CONN = 'DRIVER={ODBC Driver 18 for SQL Server};SERVER=your_host,1433;DATABASE=bronze_db;UID=sa;PWD=yourpassword'
-.venv\Scripts\python app\consumer\consumer.py
+python producer.py
+python consumer.py
 ```
 
-- Or run the consumer and paste the same connection string when prompted.
+3. Run the gold + dim pipelines locally (from repo root):
 
-## Quick verification
+```powershell
+python medallion/gold/gold.py        # runs gold+dim loop
+# or run a single iteration / only gold / only dim
+python medallion/gold/gold.py --once
+python medallion/gold/gold.py --gold-only
+python medallion/gold/gold.py --dim-only
+```
 
-- Start Kafka with `docker compose up -d`.
-- Run `app/data_generation/producer.py` and `app/consumer/consumer.py` in separate terminals, providing a valid SQL Server connection string to the consumer.
+4. Open the dashboard:
 
-## Next steps / enhancements
+```powershell
+streamlit run app/streamlit_app.py
+```
 
-- Add automated integration tests that mock Kafka and a test SQL Server instance.
-- Add optional Dockerized SQL Server service for local testing (requires large image and MS license considerations).
+Docker / Airflow quick start
+
+1. Generate `.env` with SQLAlchemy connection (reads `medallion/silver/silver.py` configuration):
+
+```powershell
+python scripts/generate_mssql_env.py
+```
+
+2. Build and start services (may take several minutes while images build):
+
+```powershell
+docker compose up --build -d
+```
+
+Notes:
+- The Airflow image installs the Microsoft ODBC driver; building that image requires network access and apt permissions during the Docker build. If the build fails due to missing packages or network issues, inspect the build logs and try again on a machine with internet access.
+- `MSSQL_ALCHEMY_CONN` is read from `.env` by the Airflow container to configure the metadata DB connection.
+
+Data tests
+
+Run repository data-quality checks between layers using:
+
+```powershell
+python scripts/data_tests.py --boundary silver_gold
+```
+
+Streamlit dashboard features
+
+- Auto-refreshing KPI dashboard (5s) showing:
+  - Table counts and watermark timestamps
+  - Per-sensor last-minute time series (one line per sensor)
+  - Per-sensor total average and last-minute average
+  - Last-second variation charts and recent-series panels
+  - Pipeline latency (per-dim table) and last-element latency per table
+
+Troubleshooting
+
+- ODBC/pyodbc errors: ensure the Microsoft ODBC driver is installed and visible to `pyodbc`.
+- Docker image build failures for Airflow: check the Docker build logs for missing apt packages or network errors; building the image on a machine with internet access usually resolves the msodbcsql install steps.
+- Streamlit shows an import error for `medallion`: run `pip install -r requirements.txt` and run Streamlit from the repo root (`streamlit run app/streamlit_app.py`).
+
+Contributing and next steps
+
+- Add integration tests that exercise the full pipeline with a test Kafka broker and ephemeral SQL Server instance.
+- Consider adding unique constraints and per-sensor watermarks for scalability in production.
+
 

@@ -43,7 +43,7 @@ def main():
             while True:
                 time.sleep(1)
         except KeyboardInterrupt:
-            print('Interrupted; shutting down both pipelines')
+            print('Interrupted; shutting down both algorithms...')
 
 
 if __name__ == '__main__':

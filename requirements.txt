@@ -1,3 +1,6 @@
-# Requirements for Kafka mini project
 kafka-python
 pyodbc
+pandas
+streamlit
+plotly
+streamlit-autorefresh
