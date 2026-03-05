@@ -61,19 +61,17 @@ jobs:
           ssh-keyscan -p "${OCI_PORT:-22}" "${{ secrets.OCI_HOST }}" >> ~/.ssh/known_hosts 2>&1 || echo "Warning: ssh-keyscan failed, proceeding anyway"
 
       - name: Sync repository to Oracle VM
-        shell: bash
         run: |
-          OCI_PORT="${{ secrets.OCI_PORT }}"
-          OCI_APP_PATH="${{ secrets.OCI_APP_PATH }}"
-          OCI_USER="${{ secrets.OCI_USER }}"
-          
           rsync -avz --delete \
-            -e "ssh -i ~/.ssh/oci_vm_key -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p ${OCI_PORT:-22}" \
+            -e "ssh -i ~/.ssh/oci_vm_key -p ${{ secrets.OCI_PORT }}" \
             --exclude ".git" \
             --exclude "__pycache__" \
             --exclude ".pytest_cache" \
-            ./ "$OCI_USER@${{ secrets.OCI_HOST }}:${OCI_APP_PATH:-/home/$OCI_USER/IoT-sensors-streaming-pipeline}/"
+            --exclude "*.pyc" \
+            --exclude ".env" \
+            ./ "${{ secrets.OCI_USER }}@${{ secrets.OCI_HOST }}:${{ secrets.OCI_APP_PATH }}/"
 
+            
       - name: Deploy with docker compose
         shell: bash
         run: |
