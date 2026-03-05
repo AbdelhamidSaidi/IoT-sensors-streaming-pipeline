@@ -47,14 +47,25 @@ jobs:
       - name: Setup SSH key
         shell: bash
         run: |
-          OCI_SSH_PRIVATE_KEY=$(grep "^OCI_SSH_PRIVATE_KEY=" .env | cut -d= -f2-)
-          OCI_HOST=$(grep "^OCI_HOST=" .env | cut -d= -f2)
-          OCI_PORT=$(grep "^OCI_PORT=" .env | cut -d= -f2 || echo "22")
+          OCI_SSH_PRIVATE_KEY=$(grep "^OCI_SSH_PRIVATE_KEY=" .env | cut -d= -f2- | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+          OCI_HOST=$(grep "^OCI_HOST=" .env | cut -d= -f2 | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+          OCI_PORT=$(grep "^OCI_PORT=" .env | cut -d= -f2 | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' || echo "22")
+          
+          if [ -z "$OCI_SSH_PRIVATE_KEY" ]; then
+            echo "Error: OCI_SSH_PRIVATE_KEY not found in .env"
+            exit 1
+          fi
           
           mkdir -p ~/.ssh
           printf "%s" "$OCI_SSH_PRIVATE_KEY" > ~/.ssh/oci_key
           chmod 600 ~/.ssh/oci_key
-          ssh-keyscan -p "${OCI_PORT:-22}" "$OCI_HOST" >> ~/.ssh/known_hosts
+          
+          if [ -z "$OCI_HOST" ]; then
+            echo "Error: OCI_HOST not found in .env"
+            exit 1
+          fi
+          
+          ssh-keyscan -p "${OCI_PORT:-22}" "$OCI_HOST" >> ~/.ssh/known_hosts 2>&1 || true
 
       - name: Sync repository to Oracle VM
         shell: bash
