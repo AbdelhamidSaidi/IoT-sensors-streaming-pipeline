@@ -35,6 +35,23 @@ jobs:
           fi
           echo "✅ All required secrets present"
 
+
+      - name: Create .env file
+        run: |
+          cat > .env <<EOF
+          MSSQL_SA_PASSWORD=${{ secrets.MSSQL_SA_PASSWORD }}
+          OCI_COMPARTMENT_ID=${{ secrets.OCI_COMPARTMENT_ID }}
+          OCI_CONFIG_PROFILE=${{ secrets.OCI_CONFIG_PROFILE }}
+          OCI_FINGERPRINT=${{ secrets.OCI_FINGERPRINT }}
+          OCI_HOST=${{ secrets.OCI_HOST }}
+          OCI_REGION=${{ secrets.OCI_REGION }}
+          OCI_TENANCY=${{ secrets.OCI_TENANCY }}
+          OCI_USER=${{ secrets.OCI_USER }}
+          OCI_CONFIG_FILE=${{ secrets.OCI_CONFIG_FILE }}
+          OCI_KEY_FILE=${{ secrets.OCI_KEY_FILE }}
+          EOF
+            echo "✅ .env file created with necessary environment variables"
+
       - name: Write SSH key
         run: |
           mkdir -p ~/.ssh
@@ -54,21 +71,6 @@ jobs:
             -p "${{ secrets.OCI_PORT }}" \
             "${{ secrets.OCI_USER }}@${{ secrets.OCI_HOST }}" \
             "echo '✅ SSH connection successful'"
-
-      - name: Create .env file
-        run: |
-          cat > .env <<EOF
-          MSSQL_SA_PASSWORD=${{ secrets.MSSQL_SA_PASSWORD }}
-          OCI_COMPARTMENT_ID=${{ secrets.OCI_COMPARTMENT_ID }}
-          OCI_CONFIG_PROFILE=${{ secrets.OCI_CONFIG_PROFILE }}
-          OCI_FINGERPRINT=${{ secrets.OCI_FINGERPRINT }}
-          OCI_HOST=${{ secrets.OCI_HOST }}
-          OCI_REGION=${{ secrets.OCI_REGION }}
-          OCI_TENANCY=${{ secrets.OCI_TENANCY }}
-          OCI_USER=${{ secrets.OCI_USER }}
-          OCI_CONFIG_FILE=${{ secrets.OCI_CONFIG_FILE }}
-          OCI_KEY_FILE=${{ secrets.OCI_KEY_FILE }}
-          EOF
 
       - name: Ensure app directory exists on VM
         run: |
