@@ -8,7 +8,7 @@ concurrency:
   group: deploy-production
   cancel-in-progress: true
 
-  
+
 jobs:
   deploy:
     name: Deploy to Oracle Cloud
@@ -61,16 +61,16 @@ jobs:
 
       - name: Add VM to known hosts
         run: |
-          ssh-keyscan -p "${{ secrets.OCI_PORT }}" "${{ secrets.OCI_HOST }}" >> ~/.ssh/known_hosts
-          echo "✅ Host added to known_hosts"
+            ssh-keyscan -p "${{ secrets.OCI_PORT }}" "${{ secrets.OCI_HOST }}" >> ~/.ssh/known_hosts 2>&1 || true
+            echo "✅ Done"
 
       - name: Test SSH connection
         run: |
-          ssh \
-            -i ~/.ssh/oci_vm_key \
-            -p "${{ secrets.OCI_PORT }}" \
-            "${{ secrets.OCI_USER }}@${{ secrets.OCI_HOST }}" \
-            "echo '✅ SSH connection successful'"
+            ssh \
+                -i ~/.ssh/oci_vm_key \
+                -p "${{ secrets.OCI_PORT }}" \
+                "${{ secrets.OCI_USER }}@${{ secrets.OCI_HOST }}" \
+                "echo '✅ SSH connection successful'"
 
       - name: Ensure app directory exists on VM
         run: |
