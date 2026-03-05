@@ -13,6 +13,8 @@ jobs:
   deploy:
     name: Deploy to Oracle Cloud
     runs-on: ubuntu-latest
+    environment: .env
+    
     env:
       OCI_HOST: ${{ secrets.OCI_HOST }}
       OCI_COMPARTMENT_ID: ${{ secrets.OCI_COMPARTMENT_ID }}
