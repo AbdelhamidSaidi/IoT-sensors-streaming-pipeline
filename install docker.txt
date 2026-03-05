@@ -1,0 +1,5 @@
+sudo dnf install -y oracle-epel-release-el9
+sudo dnf install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
+sudo systemctl start docker
+sudo systemctl enable docker
+sudo usermod -aG docker opc
