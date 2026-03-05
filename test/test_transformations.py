@@ -63,3 +63,4 @@ def test_dim_parse_ts_accepts_datetime_and_iso():
 def test_ensure_dim_table_requires_non_empty_metric():
     with pytest.raises(ValueError, match="metric must be non-empty"):
         ensure_dim_table(cursor=None, metric="")
+        
