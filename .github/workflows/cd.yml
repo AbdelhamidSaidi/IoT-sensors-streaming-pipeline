@@ -31,6 +31,7 @@ jobs:
           [[ -z "${{ secrets.EC2_APP_PATH }}"             ]] && missing+=("EC2_APP_PATH")
           [[ -z "${{ secrets.AWS_S3_DEPLOY_BUCKET }}"     ]] && missing+=("AWS_S3_DEPLOY_BUCKET")
           [[ -z "${{ secrets.MSSQL_SA_PASSWORD }}"        ]] && missing+=("MSSQL_SA_PASSWORD")
+          [[ -z "${{ secrets.MSSQL_ALCHEMY_CONN }}"       ]] && missing+=("MSSQL_ALCHEMY_CONN")
 
           if [[ ${#missing[@]} -gt 0 ]]; then
             echo "❌ Missing secrets: ${missing[*]}"
@@ -48,6 +49,7 @@ jobs:
         run: |
           cat > .env <<EOF
           MSSQL_SA_PASSWORD=${{ secrets.MSSQL_SA_PASSWORD }}
+          MSSQL_ALCHEMY_CONN=${{ secrets.MSSQL_ALCHEMY_CONN }}
           AWS_REGION=${{ secrets.AWS_REGION }}
           EOF
           echo "✅ .env file created"
@@ -74,7 +76,7 @@ jobs:
             --parameters 'commands=[
               "mkdir -p ${{ secrets.EC2_APP_PATH }}",
               "which unzip || apt-get install -y unzip",
-              "which aws || snap install aws-cli --classic",
+              "chmod 666 /var/run/docker.sock || true",
               "echo done"
             ]' \
             --query "Command.CommandId" \
@@ -98,7 +100,7 @@ jobs:
             --instance-ids "${{ secrets.EC2_INSTANCE_ID }}" \
             --document-name "AWS-RunShellScript" \
             --parameters "commands=[
-              \"/snap/bin/aws s3 cp s3://${{ secrets.AWS_S3_DEPLOY_BUCKET }}/deploy/app.zip /tmp/app.zip\",
+              \"/snap/bin/aws-cli.aws s3 cp s3://${{ secrets.AWS_S3_DEPLOY_BUCKET }}/deploy/app.zip /tmp/app.zip\",
               \"unzip -o /tmp/app.zip -d ${{ secrets.EC2_APP_PATH }}\",
               \"rm /tmp/app.zip\",
               \"echo sync done\"
@@ -238,3 +240,7 @@ jobs:
           echo "❌ Timed out"
           exit 1
 
+      - name: Clean up S3 deploy artifact
+        if: always()
+        run: |
+          aws s3 rm "s3://${{ secrets.AWS_S3_DEPLOY_BUCKET }}/deploy/app.zip" || true
