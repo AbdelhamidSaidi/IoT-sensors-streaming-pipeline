@@ -8,12 +8,15 @@ concurrency:
   group: deploy-production
   cancel-in-progress: true
 
-
 jobs:
   deploy:
-    name: Deploy to Oracle Cloud
+    name: Deploy to AWS EC2
     runs-on: ubuntu-latest
     environment: .env
+
+    permissions:
+      id-token: write   # Required for OIDC auth to AWS
+      contents: read
 
     steps:
       - name: Checkout
@@ -22,11 +25,10 @@ jobs:
       - name: Validate required secrets
         run: |
           missing=()
-          [[ -z "${{ secrets.OCI_HOST }}"            ]] && missing+=("OCI_HOST")
-          [[ -z "${{ secrets.OCI_USER }}"            ]] && missing+=("OCI_USER")
-          [[ -z "${{ secrets.OCI_PORT }}"            ]] && missing+=("OCI_PORT")
-          [[ -z "${{ secrets.OCI_APP_PATH }}"        ]] && missing+=("OCI_APP_PATH")
-          [[ -z "${{ secrets.OCI_VM_KEY }}"          ]] && missing+=("OCI_VM_KEY")
+          [[ -z "${{ secrets.AWS_ROLE_ARN }}"        ]] && missing+=("AWS_ROLE_ARN")
+          [[ -z "${{ secrets.AWS_REGION }}"          ]] && missing+=("AWS_REGION")
+          [[ -z "${{ secrets.EC2_INSTANCE_ID }}"     ]] && missing+=("EC2_INSTANCE_ID")
+          [[ -z "${{ secrets.EC2_APP_PATH }}"        ]] && missing+=("EC2_APP_PATH")
           [[ -z "${{ secrets.MSSQL_SA_PASSWORD }}"   ]] && missing+=("MSSQL_SA_PASSWORD")
 
           if [[ ${#missing[@]} -gt 0 ]]; then
@@ -35,87 +37,116 @@ jobs:
           fi
           echo "✅ All required secrets present"
 
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
 
       - name: Create .env file
         run: |
           cat > .env <<EOF
           MSSQL_SA_PASSWORD=${{ secrets.MSSQL_SA_PASSWORD }}
-          OCI_COMPARTMENT_ID=${{ secrets.OCI_COMPARTMENT_ID }}
-          OCI_CONFIG_PROFILE=${{ secrets.OCI_CONFIG_PROFILE }}
-          OCI_FINGERPRINT=${{ secrets.OCI_FINGERPRINT }}
-          OCI_HOST=${{ secrets.OCI_HOST }}
-          OCI_REGION=${{ secrets.OCI_REGION }}
-          OCI_TENANCY=${{ secrets.OCI_TENANCY }}
-          OCI_USER=${{ secrets.OCI_USER }}
-          OCI_CONFIG_FILE=${{ secrets.OCI_CONFIG_FILE }}
-          OCI_KEY_FILE=${{ secrets.OCI_KEY_FILE }}
+          AWS_REGION=${{ secrets.AWS_REGION }}
           EOF
-            echo "✅ .env file created with necessary environment variables"
+          echo "✅ .env file created"
 
-      - name: Write SSH key
+      - name: Zip repository
         run: |
-          mkdir -p ~/.ssh
-          printf '%s\n' "${{ secrets.OCI_VM_KEY }}" > ~/.ssh/oci_vm_key
-          chmod 600 ~/.ssh/oci_vm_key
-          ssh-keygen -l -f ~/.ssh/oci_vm_key && echo "✅ Key fingerprint OK" || (echo "❌ Key is malformed" && exit 1)
+          zip -r app.zip . \
+            --exclude "*.git*" \
+            --exclude "*__pycache__*" \
+            --exclude "*.pytest_cache*" \
+            --exclude "*.pyc"
+          echo "✅ Repository zipped"
 
-      - name: Add VM to known hosts
+      - name: Upload zip to EC2 via SSM S3 transfer
         run: |
-            ssh-keyscan -p "${{ secrets.OCI_PORT }}" "${{ secrets.OCI_HOST }}" >> ~/.ssh/known_hosts 2>&1 || true
-            echo "✅ Done"
+          # Upload zip to a temp S3 bucket location
+          aws s3 cp app.zip "s3://${{ secrets.AWS_S3_DEPLOY_BUCKET }}/deploy/app.zip"
+          echo "✅ Zip uploaded to S3"
 
-      - name: Test SSH connection
+      - name: Ensure app directory exists on EC2
         run: |
-            ssh \
-                -i ~/.ssh/oci_vm_key \
-                -p "${{ secrets.OCI_PORT }}" \
-                "${{ secrets.OCI_USER }}@${{ secrets.OCI_HOST }}" \
-                "echo '✅ SSH connection successful'"
+          COMMAND_ID=$(aws ssm send-command \
+            --instance-ids "${{ secrets.EC2_INSTANCE_ID }}" \
+            --document-name "AWS-RunShellScript" \
+            --parameters "commands=[\"mkdir -p ${{ secrets.EC2_APP_PATH }}\"]" \
+            --query "Command.CommandId" \
+            --output text)
 
-      - name: Ensure app directory exists on VM
-        run: |
-          ssh \
-            -i ~/.ssh/oci_vm_key \
-            -p "${{ secrets.OCI_PORT }}" \
-            "${{ secrets.OCI_USER }}@${{ secrets.OCI_HOST }}" \
-            "mkdir -p ${{ secrets.OCI_APP_PATH }}"
+          aws ssm wait command-executed \
+            --command-id "$COMMAND_ID" \
+            --instance-id "${{ secrets.EC2_INSTANCE_ID }}"
+          echo "✅ App directory ready"
 
-      - name: Sync repository to Oracle VM
+      - name: Sync repository to EC2 via S3
         run: |
-          rsync -avz --delete \
-            -e "ssh -i ~/.ssh/oci_vm_key -p ${{ secrets.OCI_PORT }}" \
-            --exclude ".git" \
-            --exclude "__pycache__" \
-            --exclude ".pytest_cache" \
-            --exclude "*.pyc" \
-            ./ "${{ secrets.OCI_USER }}@${{ secrets.OCI_HOST }}:${{ secrets.OCI_APP_PATH }}/"
+          COMMAND_ID=$(aws ssm send-command \
+            --instance-ids "${{ secrets.EC2_INSTANCE_ID }}" \
+            --document-name "AWS-RunShellScript" \
+            --parameters "commands=[
+              \"aws s3 cp s3://${{ secrets.AWS_S3_DEPLOY_BUCKET }}/deploy/app.zip /tmp/app.zip\",
+              \"unzip -o /tmp/app.zip -d ${{ secrets.EC2_APP_PATH }}\",
+              \"rm /tmp/app.zip\"
+            ]" \
+            --query "Command.CommandId" \
+            --output text)
+
+          aws ssm wait command-executed \
+            --command-id "$COMMAND_ID" \
+            --instance-id "${{ secrets.EC2_INSTANCE_ID }}"
+          echo "✅ Repository synced"
 
       - name: Install Docker if not present
         run: |
-          ssh \
-            -i ~/.ssh/oci_vm_key \
-            -p "${{ secrets.OCI_PORT }}" \
-            "${{ secrets.OCI_USER }}@${{ secrets.OCI_HOST }}" \
-            "if ! command -v docker &> /dev/null; then
-              echo 'Installing Docker...'
-              sudo dnf install -y oracle-epel-release-el9
-              sudo dnf install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
-              sudo systemctl start docker
-              sudo systemctl enable docker
-              sudo usermod -aG docker \$USER
-              echo '✅ Docker installed'
-            else
-              echo '✅ Docker already installed, skipping'
-            fi"
+          COMMAND_ID=$(aws ssm send-command \
+            --instance-ids "${{ secrets.EC2_INSTANCE_ID }}" \
+            --document-name "AWS-RunShellScript" \
+            --parameters "commands=[
+              \"if ! command -v docker &> /dev/null; then\",
+              \"  echo 'Installing Docker...'\",
+              \"  apt-get update -y\",
+              \"  apt-get install -y ca-certificates curl gnupg\",
+              \"  install -m 0755 -d /etc/apt/keyrings\",
+              \"  curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg\",
+              \"  chmod a+r /etc/apt/keyrings/docker.gpg\",
+              \"  echo \\\"deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo $VERSION_CODENAME) stable\\\" | tee /etc/apt/sources.list.d/docker.list\",
+              \"  apt-get update -y\",
+              \"  apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin\",
+              \"  systemctl start docker\",
+              \"  systemctl enable docker\",
+              \"  echo '✅ Docker installed'\",
+              \"else\",
+              \"  echo '✅ Docker already installed, skipping'\",
+              \"fi\"
+            ]" \
+            --query "Command.CommandId" \
+            --output text)
+
+          aws ssm wait command-executed \
+            --command-id "$COMMAND_ID" \
+            --instance-id "${{ secrets.EC2_INSTANCE_ID }}"
 
       - name: Deploy with Docker Compose
         run: |
-          ssh \
-            -i ~/.ssh/oci_vm_key \
-            -p "${{ secrets.OCI_PORT }}" \
-            "${{ secrets.OCI_USER }}@${{ secrets.OCI_HOST }}" \
-            "cd ${{ secrets.OCI_APP_PATH }} && docker compose down && docker compose up -d --build"
+          COMMAND_ID=$(aws ssm send-command \
+            --instance-ids "${{ secrets.EC2_INSTANCE_ID }}" \
+            --document-name "AWS-RunShellScript" \
+            --parameters "commands=[
+              \"cd ${{ secrets.EC2_APP_PATH }}\",
+              \"docker compose down\",
+              \"docker compose up -d --build\"
+            ]" \
+            --query "Command.CommandId" \
+            --output text)
 
-      - name: Clean up SSH key
+          aws ssm wait command-executed \
+            --command-id "$COMMAND_ID" \
+            --instance-id "${{ secrets.EC2_INSTANCE_ID }}"
+          echo "✅ Deployment complete"
+
+      - name: Clean up S3 deploy artifact
         if: always()
-        run: rm -f ~/.ssh/oci_vm_key
+        run: |
+          aws s3 rm "s3://${{ secrets.AWS_S3_DEPLOY_BUCKET }}/deploy/app.zip" || true
