@@ -15,7 +15,7 @@ jobs:
     environment: .env
 
     permissions:
-      id-token: write   # Required for OIDC auth to AWS
+      id-token: write
       contents: read
 
     steps:
@@ -25,11 +25,12 @@ jobs:
       - name: Validate required secrets
         run: |
           missing=()
-          [[ -z "${{ secrets.AWS_ROLE_ARN }}"        ]] && missing+=("AWS_ROLE_ARN")
-          [[ -z "${{ secrets.AWS_REGION }}"          ]] && missing+=("AWS_REGION")
-          [[ -z "${{ secrets.EC2_INSTANCE_ID }}"     ]] && missing+=("EC2_INSTANCE_ID")
-          [[ -z "${{ secrets.EC2_APP_PATH }}"        ]] && missing+=("EC2_APP_PATH")
-          [[ -z "${{ secrets.MSSQL_SA_PASSWORD }}"   ]] && missing+=("MSSQL_SA_PASSWORD")
+          [[ -z "${{ secrets.AWS_ROLE_ARN }}"             ]] && missing+=("AWS_ROLE_ARN")
+          [[ -z "${{ secrets.AWS_REGION }}"               ]] && missing+=("AWS_REGION")
+          [[ -z "${{ secrets.EC2_INSTANCE_ID }}"          ]] && missing+=("EC2_INSTANCE_ID")
+          [[ -z "${{ secrets.EC2_APP_PATH }}"             ]] && missing+=("EC2_APP_PATH")
+          [[ -z "${{ secrets.AWS_S3_DEPLOY_BUCKET }}"     ]] && missing+=("AWS_S3_DEPLOY_BUCKET")
+          [[ -z "${{ secrets.MSSQL_SA_PASSWORD }}"        ]] && missing+=("MSSQL_SA_PASSWORD")
 
           if [[ ${#missing[@]} -gt 0 ]]; then
             echo "❌ Missing secrets: ${missing[*]}"
@@ -60,36 +61,40 @@ jobs:
             --exclude "*.pyc"
           echo "✅ Repository zipped"
 
-      - name: Upload zip to EC2 via SSM S3 transfer
+      - name: Upload zip to S3
         run: |
-          # Upload zip to a temp S3 bucket location
           aws s3 cp app.zip "s3://${{ secrets.AWS_S3_DEPLOY_BUCKET }}/deploy/app.zip"
           echo "✅ Zip uploaded to S3"
 
-      - name: Ensure app directory exists on EC2
+      - name: Ensure app directory + install AWS CLI + unzip on EC2
         run: |
           COMMAND_ID=$(aws ssm send-command \
             --instance-ids "${{ secrets.EC2_INSTANCE_ID }}" \
             --document-name "AWS-RunShellScript" \
-            --parameters "commands=[\"mkdir -p ${{ secrets.EC2_APP_PATH }}\"]" \
+            --parameters 'commands=[
+              "mkdir -p ${{ secrets.EC2_APP_PATH }}",
+              "if ! command -v unzip &> /dev/null; then apt-get install -y unzip; fi",
+              "if ! command -v aws &> /dev/null; then snap install aws-cli --classic; fi"
+            ]' \
             --query "Command.CommandId" \
             --output text)
 
           aws ssm wait command-executed \
             --command-id "$COMMAND_ID" \
             --instance-id "${{ secrets.EC2_INSTANCE_ID }}"
-          echo "✅ App directory ready"
+          echo "✅ EC2 prerequisites ready"
 
       - name: Sync repository to EC2 via S3
         run: |
           COMMAND_ID=$(aws ssm send-command \
             --instance-ids "${{ secrets.EC2_INSTANCE_ID }}" \
             --document-name "AWS-RunShellScript" \
-            --parameters "commands=[
-              \"aws s3 cp s3://${{ secrets.AWS_S3_DEPLOY_BUCKET }}/deploy/app.zip /tmp/app.zip\",
-              \"unzip -o /tmp/app.zip -d ${{ secrets.EC2_APP_PATH }}\",
-              \"rm /tmp/app.zip\"
-            ]" \
+            --parameters 'commands=[
+              "/snap/bin/aws s3 cp s3://${{ secrets.AWS_S3_DEPLOY_BUCKET }}/deploy/app.zip /tmp/app.zip",
+              "unzip -o /tmp/app.zip -d ${{ secrets.EC2_APP_PATH }}",
+              "rm /tmp/app.zip",
+              "echo Sync complete"
+            ]' \
             --query "Command.CommandId" \
             --output text)
 
@@ -103,41 +108,28 @@ jobs:
           COMMAND_ID=$(aws ssm send-command \
             --instance-ids "${{ secrets.EC2_INSTANCE_ID }}" \
             --document-name "AWS-RunShellScript" \
-            --parameters "commands=[
-              \"if ! command -v docker &> /dev/null; then\",
-              \"  echo 'Installing Docker...'\",
-              \"  apt-get update -y\",
-              \"  apt-get install -y ca-certificates curl gnupg\",
-              \"  install -m 0755 -d /etc/apt/keyrings\",
-              \"  curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg\",
-              \"  chmod a+r /etc/apt/keyrings/docker.gpg\",
-              \"  echo \\\"deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo $VERSION_CODENAME) stable\\\" | tee /etc/apt/sources.list.d/docker.list\",
-              \"  apt-get update -y\",
-              \"  apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin\",
-              \"  systemctl start docker\",
-              \"  systemctl enable docker\",
-              \"  echo '✅ Docker installed'\",
-              \"else\",
-              \"  echo '✅ Docker already installed, skipping'\",
-              \"fi\"
-            ]" \
+            --parameters 'commands=[
+              "if ! command -v docker &> /dev/null; then curl -fsSL https://get.docker.com | sh && systemctl enable docker && systemctl start docker; fi",
+              "docker --version"
+            ]' \
             --query "Command.CommandId" \
             --output text)
 
           aws ssm wait command-executed \
             --command-id "$COMMAND_ID" \
             --instance-id "${{ secrets.EC2_INSTANCE_ID }}"
+          echo "✅ Docker ready"
 
       - name: Deploy with Docker Compose
         run: |
           COMMAND_ID=$(aws ssm send-command \
             --instance-ids "${{ secrets.EC2_INSTANCE_ID }}" \
             --document-name "AWS-RunShellScript" \
-            --parameters "commands=[
-              \"cd ${{ secrets.EC2_APP_PATH }}\",
-              \"docker compose down\",
-              \"docker compose up -d --build\"
-            ]" \
+            --parameters 'commands=[
+              "cd ${{ secrets.EC2_APP_PATH }} && docker compose down --remove-orphans || true",
+              "cd ${{ secrets.EC2_APP_PATH }} && docker compose up -d --build",
+              "echo Deploy complete"
+            ]' \
             --query "Command.CommandId" \
             --output text)
 
