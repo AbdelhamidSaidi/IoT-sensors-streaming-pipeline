@@ -1,6 +1,9 @@
-# IoT Sensors Streaming Pipeline — Medallion architecture (local dev)
+# Real-Time IoT Sensor Data Pipeline – End-to-end Streaming & Analytics Pipeline Project 
 
 This repository contains a minimal end-to-end medallion-style pipeline for IoT sensor data: a Python producer → Kafka broker → consumer (bronze) → silver transforms → gold transforms → dim tables. The repo includes orchestration (Airflow DAG), a Streamlit dashboard for KPIs, and helper scripts for local development.
+
+<img width="1625" height="1112" alt="diagram-export-06-03-2026-06_55_46" src="https://github.com/user-attachments/assets/29304b95-cbd3-4c1d-9252-a9fe395af03f" />
+
 
 Key points:
 - Kafka is used as the message bus (single-node broker in KRaft mode for local use).
