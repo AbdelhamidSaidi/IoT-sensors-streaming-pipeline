@@ -1,17 +1,18 @@
 # Real-Time IoT Sensor Data Pipeline – End-to-end Streaming & Analytics Pipeline Project 
 
-This repository contains a minimal end-to-end medallion-style pipeline for IoT sensor data: a Python producer → Kafka broker → consumer (bronze) → silver transforms → gold transforms → dim tables. The repo includes orchestration (Airflow DAG), a Streamlit dashboard for KPIs, and helper scripts for local development.
+<img width="1625" height="981" alt="image" src="https://github.com/user-attachments/assets/cb2a3548-f051-444b-b80b-331cb9f961a0" />
 
-<img width="1625" height="1112" alt="diagram-export-06-03-2026-06_55_46" src="https://github.com/user-attachments/assets/29304b95-cbd3-4c1d-9252-a9fe395af03f" />
+This repository contains an end-to-end medallion-style pipeline for IoT sensor data: a Python producer → Kafka broker → consumer (bronze) → silver transforms → gold transforms → dim tables. The repo includes orchestration (Airflow DAG), a Streamlit dashboard for KPIs, and helper scripts for local development.
 
 
-Key points:
+
+## Key points:
 - Kafka is used as the message bus (single-node broker in KRaft mode for local use).
 - SQL Server (T-SQL) is used as the persistence layer (accessed via ODBC / `pyodbc`).
 - The medallion layers are implemented under the `medallion/` package (`silver/`, `gold/`).
 - A Streamlit dashboard in `app/streamlit_app.py` visualizes KPIs, per-sensor series, watermarks and latency.
 
-Repository layout (important files)
+## Repository layout (important files)
 
 - `producer.py` — synthetic producer that publishes sensor messages to Kafka (`sensor-data` topic).
 - `consumer.py` — Kafka consumer that writes raw messages to `sensor_logs` (bronze).
@@ -31,16 +32,16 @@ Repository layout (important files)
   - `diagnose_dim.py` — diagnostic utility for `dim` tables
 - `requirements.txt` — Python dependencies (Streamlit, pandas, pyodbc, kafka-python, plotly, streamlit-autorefresh)
 
-Prerequisites
+## Prerequisites
 
-- Python 3.9+ (use a virtual environment for local runs)
+- Python 3.13+ (use a virtual environment for local runs)
 - Docker & Docker Compose (for the Kafka + Airflow environment)
 - Access to a SQL Server instance reachable from your runtime (or configure a Dockerized SQL Server with appropriate licensing)
 - On Windows, install Microsoft ODBC Driver for SQL Server (e.g. ODBC Driver 18). Containers use `msodbcsql` installed in the Airflow image.
 
-Quick local development (without Docker)
+## Quick local development (without Docker)
 
-1. Create and activate a venv, install deps:
+### 1. Create and activate a venv, install deps:
 
 ```powershell
 python -m venv .venv
@@ -48,14 +49,14 @@ python -m venv .venv
 pip install -r requirements.txt
 ```
 
-2. Start the producer and consumer in separate terminals (consumer needs a valid SQL Server connection string):
+### 2. Start the producer and consumer in separate terminals (consumer needs a valid SQL Server connection string):
 
 ```powershell
 python producer.py
 python consumer.py
 ```
 
-3. Run the gold + dim pipelines locally (from repo root):
+### 3. Run the gold + dim pipelines locally (from repo root):
 
 ```powershell
 python medallion/gold/gold.py        # runs gold+dim loop
@@ -65,15 +66,15 @@ python medallion/gold/gold.py --gold-only
 python medallion/gold/gold.py --dim-only
 ```
 
-4. Open the dashboard:
+### 4. Open the dashboard:
 
 ```powershell
 streamlit run app/streamlit_app.py
 ```
 
-Docker / Airflow quick start
+## Docker / Airflow quick start
 
-1. Generate `.env` with SQLAlchemy connection (reads `medallion/silver/silver.py` configuration):
+### 1. Generate `.env` with SQLAlchemy connection (reads `medallion/silver/silver.py` configuration):
 
 ```powershell
 # Copy the example env and set a strong SA password before starting
@@ -82,17 +83,17 @@ copy .env.example .env
 python scripts/generate_mssql_env.py
 ```
 
-2. Build and start services (may take several minutes while images build):
+### 2. Build and start services (may take several minutes while images build):
 
 ```powershell
 docker compose up --build -d
 ```
 
-Notes:
+## Notes:
 - The Airflow image installs the Microsoft ODBC driver; building that image requires network access and apt permissions during the Docker build. If the build fails due to missing packages or network issues, inspect the build logs and try again on a machine with internet access.
 - `MSSQL_ALCHEMY_CONN` is read from `.env` by the Airflow container to configure the metadata DB connection.
 
-Data tests
+## Data tests
 
 Run repository data-quality checks between layers using:
 
@@ -100,7 +101,7 @@ Run repository data-quality checks between layers using:
 python scripts/data_tests.py --boundary silver_gold
 ```
 
-Streamlit dashboard features
+## Streamlit dashboard features
 
 - Auto-refreshing KPI dashboard (5s) showing:
   - Table counts and watermark timestamps
@@ -109,7 +110,7 @@ Streamlit dashboard features
   - Last-second variation charts and recent-series panels
   - Pipeline latency (per-dim table) and last-element latency per table
 
-CI/CD Pipeline
+## CI/CD Pipeline
 
 This repository includes automated CI/CD workflows using GitHub Actions:
 
